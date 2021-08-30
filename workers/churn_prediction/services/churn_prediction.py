@@ -981,6 +981,7 @@ class ChurnPredictionCompleteTrainingJob():
             # NOTE: Do not apply predictions where predictions are identical across all profiles,
             # this indicates that the model is overfitted.
             # In this case, send callback to octy job service to destroy job.
+            
             await self._destroy_job()
 
         await self._numerical_clustering_encoding('churn_prob', True)
