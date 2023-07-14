@@ -1,6 +1,6 @@
 from fastapi import Query
 from pydantic import BaseModel, validator, HttpUrl
-from typing import List, Dict
+from typing import List, Dict, Union
 from email_validator import validate_email, EmailNotValidError
 
 
@@ -25,6 +25,7 @@ class CreateAccount(BaseModel):
     account_currency : str
     contact_name : str
     contact_surname : str
+    authenticated_id_key: Union[str, None] = None
     webhook_url : HttpUrl
     permissions : List[str]
     @validator('permissions')
