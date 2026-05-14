@@ -1,6 +1,6 @@
 #module imports 
 from config import Config
-from profiles.app_secrets import Secrets
+from app_secrets import Secrets
 
 #python imports
 from typing import *
