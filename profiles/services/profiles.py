@@ -36,7 +36,8 @@ class ProfilesService():
         self.account_id = account_id if account_id != None else account.account_id
         self.b = None if self.account is None else BillingUnits(account_id=self.account.account_id, account_type=self.account.account_configurations['a_t'], account_currency=self.account.account_configurations['a_c'], process_name='profiles_data')
 
-    def get_profiles(self, 
+    # FIX: changed to async def + added await to both repository calls
+    async def get_profiles(self, 
                     segments : list, 
                     rfm_values : list, 
                     churn_prob : str, 
@@ -68,7 +69,8 @@ class ProfilesService():
 
         if identifiers != None and cursor == 0:
             
-            profiles, _ = profilesRepository.get_profiles_by_identifiers(account_id=self.account_id, 
+            # FIX: added await
+            profiles, _ = await profilesRepository.get_profiles_by_identifiers(account_id=self.account_id, 
                 identifiers=identifiers, 
                 tag_statuses=['active'], 
                 ids=False, 
@@ -83,7 +85,8 @@ class ProfilesService():
             
         elif identifiers == None and cursor != None:
             
-            profiles,total = profilesRepository.get_profiles_by_params(account_id=self.account.account_id, 
+            # FIX: added await
+            profiles, total = await profilesRepository.get_profiles_by_params(account_id=self.account.account_id, 
                                                 cursor=cursor,
                                                 segments=segments,
                                                 rfm_values=rfm_values,
@@ -94,7 +97,8 @@ class ProfilesService():
                 'extended_help': Config['PROFILES_EXTENDED_HELP']}])
             return profiles, total
         
-    def get_profiles_meta(self, identifiers : list = None) -> list:
+    # FIX: changed to async def + added await to both repository calls
+    async def get_profiles_meta(self, identifiers : list = None) -> list:
         """
         A method used to return a list of merged profiles.
 
@@ -107,10 +111,11 @@ class ProfilesService():
         ----------
         identifiers_meta : list
         """
-   
-        merged_profiles = profilesRepository\
+        # FIX: added await
+        merged_profiles = await profilesRepository\
             .get_merged_profiles(account_id=self.account.account_id, identifiers=identifiers)
-        found_profiles, _ = profilesRepository.get_profiles_by_identifiers(account_id=self.account_id, 
+        # FIX: added await
+        found_profiles, _ = await profilesRepository.get_profiles_by_identifiers(account_id=self.account_id, 
                 identifiers=identifiers, 
                 tag_statuses=['active'], 
                 ids=False, 
@@ -179,9 +184,10 @@ class ProfilesService():
         Created and failed to create profiles : Union[list, list]
         """
 
-        # assess allowed limits
+        # FIX: added await to get_profile_count so it returns an int, not a coroutine
+        profile_count = await profilesRepository.get_profile_count(self.account.account_id)
         res, counts = assess_resource_limit(self.account.account_configurations['li'],
-                              profilesRepository.get_profile_count(self.account.account_id),
+                              profile_count,
                               len(profiles.profiles))
         if not res:
             raise OctyException(400,'Resource limit exceeded', 
@@ -200,13 +206,14 @@ class ProfilesService():
                 }
             )
         
-        #validate client provided keys
-        res, error = self._validate_profile_key_types(profiles_batch)
+        # FIX: _validate_profile_key_types is now async, so await it
+        res, error = await self._validate_profile_key_types(profiles_batch)
         if not res:
             raise OctyException(400,'An error occurred when validating keys.', [{'error_message' : error, 
                 'extended_help': Config['PROFILES_EXTENDED_HELP']}])
 
-        created, failed = profilesRepository.create_profiles(profiles_batch)
+        # FIX: added await
+        created, failed = await profilesRepository.create_profiles(profiles_batch)
 
         if len(created) < 1:
             raise OctyException(400, 'No profiles created!', failed)
@@ -257,8 +264,8 @@ class ProfilesService():
             )
 
         if not internal:
-            #validate client provided keys
-            res, error = self._validate_profile_key_types(profiles_batch)
+            # FIX: _validate_profile_key_types is now async, so await it
+            res, error = await self._validate_profile_key_types(profiles_batch)
             if not res:
                 raise OctyException(400,'An error occurred when validating keys.', [{'error_message' : error, 
                     'extended_help': Config['PROFILES_EXTENDED_HELP']}])
@@ -317,7 +324,8 @@ class ProfilesService():
                     
         return deleted, failed
 
-    def _validate_profile_key_types(self,new_customer_profiles : dict) -> Union[bool, str]:
+    # FIX: changed to async def + added await to all repository calls inside
+    async def _validate_profile_key_types(self, new_customer_profiles : dict) -> Union[bool, str]:
         '''
         To ensure training data created from customer profiles is not corrupted, 
         the values in each key value pair across all customer profiles profile_data & platform_info in an account must be valid json and of the same data type. 
@@ -402,7 +410,8 @@ class ProfilesService():
 
                 return True, '', map_
                                
-            existing_types_map = profilesRepository.get_profile_key_types(account_id=self.account_id)
+            # FIX: added await
+            existing_types_map = await profilesRepository.get_profile_key_types(account_id=self.account_id)
 
             #build map for new profiles
             res, error, new_types_map = build_map(new_customer_profiles, 'new')
@@ -419,11 +428,13 @@ class ProfilesService():
                         if existing_type['type_'] != k_v_pair['type_']:
                             return False, f"Invalid type provided for key \'{k_v_pair['key']}\'. Got type {k_v_pair['type_']} expected type {existing_type['type_']}"
                     else:
-                        profilesRepository.set_profile_key_type(account_id=self.account_id, profile_key_type=k_v_pair)
+                        # FIX: added await
+                        await profilesRepository.set_profile_key_type(account_id=self.account_id, profile_key_type=k_v_pair)
             else:
                 # create new profile key types for each
                 for k_v_pair in new_types_map:
-                    profilesRepository.set_profile_key_type(account_id=self.account_id, profile_key_type=k_v_pair)
+                    # FIX: added await
+                    await profilesRepository.set_profile_key_type(account_id=self.account_id, profile_key_type=k_v_pair)
 
             return True, ''
 
@@ -473,7 +484,8 @@ class ProfilesService():
         return res
     
 
-    def get_profiles_internal(self, profiles : GetProfilesInternal, status : str, cursor : int, ids : bool) -> Union[list, list, int]:
+    # FIX: changed to async def + added await to both repository calls
+    async def get_profiles_internal(self, profiles : GetProfilesInternal, status : str, cursor : int, ids : bool) -> Union[list, list, int]:
         """
         Parameters
         ----------
@@ -492,8 +504,8 @@ class ProfilesService():
         not_found = None
 
         if profiles.get_all:
-
-            profiles, total = profilesRepository.get_all_profiles(account_id=self.account_id,
+            # FIX: added await
+            profiles, total = await profilesRepository.get_all_profiles(account_id=self.account_id,
                 tag_statuses=profiles.tag_statuses, 
                 cursor=cursor, 
                 ids=ids,
@@ -502,8 +514,8 @@ class ProfilesService():
                 internal=True)
 
         else:
-
-            profiles, not_found = profilesRepository.get_profiles_by_identifiers(account_id=self.account_id, 
+            # FIX: added await
+            profiles, not_found = await profilesRepository.get_profiles_by_identifiers(account_id=self.account_id, 
                 identifiers=profiles.profiles, 
                 tag_statuses=profiles.tag_statuses, 
                 ids=ids, 
