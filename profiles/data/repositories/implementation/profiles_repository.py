@@ -36,9 +36,6 @@ class _ProfilesRepository(ProfilesInterface):
         self._profiles_collection = lambda: ctx.contextManager.db["tbl_profiles"]
         self._merged_profiles_collection = lambda: ctx.contextManager.db["tbl_merged_profiles"]
 
-    # FIX: added property accessors — __init__ defines _profiles_collection as a lambda
-    # but all methods accessed self.profiles_collection (no underscore, not called),
-    # which would AttributeError on every method call.
     @property
     def profiles_collection(self):
         return self._profiles_collection()
@@ -46,6 +43,17 @@ class _ProfilesRepository(ProfilesInterface):
     @property
     def merged_profiles_collection(self):
         return self._merged_profiles_collection()
+
+    def _dt_to_str(self, value) -> str:
+        """
+        Helper to serialise a date value to a string regardless of whether
+        Motor returned a native datetime or the legacy BSON {"$date": ...} dict.
+        """
+        if isinstance(value, dt):
+            return value.strftime('%Y-%m-%dT%H:%M:%S.%f')
+        elif isinstance(value, dict) and '$date' in value:
+            return int_to_dt(value['$date'], as_str=True)
+        return value
 
     async def get_profile_count(self, account_id: str) -> int:
         """
@@ -244,10 +252,6 @@ class _ProfilesRepository(ProfilesInterface):
         ----------
         merged_profiles : list
         """
-        # FIX: replaced per-identifier pipeline loop with a single $match using $in across
-        # all identifiers. The old loop stacked $match/$sort/$limit stages sequentially,
-        # meaning each iteration would filter the already-limited result of the previous one,
-        # returning at most 1 document total and missing all but the last matched identifier.
         pipeline = [
             {
                 '$match': {
@@ -274,7 +278,8 @@ class _ProfilesRepository(ProfilesInterface):
                 'parent_customer_id': res.get('parent_customer_id'),
                 'authenticated_id_key': res.get('authenticated_id_key'),
                 'authenticated_id_value': res.get('authenticated_id_value'),
-                'merged_at': int_to_dt(res['created_at']['$date'], as_str=True) if 'created_at' in res else None
+                # FIX: use _dt_to_str to handle both native datetime and legacy {"$date":...} dict
+                'merged_at': self._dt_to_str(res['created_at']) if 'created_at' in res else None
             })
         
         return merged_profiles
@@ -426,7 +431,6 @@ class _ProfilesRepository(ProfilesInterface):
                     'profile_id': profile_id,
                     'error_message': f'Update failed: {err["errmsg"]}'
                 })
-                # Remove from updated list
                 updated_profiles = [p for p in updated_profiles if p['profile_id'] != profile_id]
         
         return updated_profiles, failed_to_update
@@ -572,7 +576,7 @@ class _ProfilesRepository(ProfilesInterface):
                                 "segment_id": seg['segment_id'],
                                 "segment_tag": seg['segment_tag'],
                                 "status": seg['status'],
-                                "created_at": dt.now(tz.utc)  # FIX: was tz.now (does not exist), corrected to tz.utc
+                                "created_at": dt.now(tz.utc)
                             }
                         }
                     }
@@ -662,9 +666,8 @@ class _ProfilesRepository(ProfilesInterface):
 
     async def _format_profile(self, profile: dict, tag_statuses: list, internal: bool = False) -> dict:
         """
-          Format profile return objects
+        Format profile return objects
         """
-    
         if '_id' in profile:
             profile['profile_id'] = str(profile['_id'])
             del profile['_id']
@@ -686,31 +689,32 @@ class _ProfilesRepository(ProfilesInterface):
                     tag.pop('segment_id', None)
                     tag.pop('status', None)
                     tag.pop('updated_at', None)
-                    if 'created_at' in tag and isinstance(tag['created_at'], dict):
-                        tag['created_at'] = int_to_dt(tag['created_at']['$date'], as_str=True)
+                    # FIX: handle both native datetime and legacy {"$date":...} dict
+                    if 'created_at' in tag:
+                        tag['created_at'] = self._dt_to_str(tag['created_at'])
                 valid_tags.append(tag)
             profile['segment_tags'] = valid_tags
         
-        # Format dates
-        if 'created_at' in profile and isinstance(profile['created_at'], dict):
-            profile['created_at'] = int_to_dt(profile['created_at']['$date'], as_str=True)
-        if 'updated_at' in profile and isinstance(profile['updated_at'], dict):
-            profile['updated_at'] = int_to_dt(profile['updated_at']['$date'], as_str=True)
+        # FIX: use _dt_to_str to handle both native datetime and legacy {"$date":...} dict
+        if 'created_at' in profile:
+            profile['created_at'] = self._dt_to_str(profile['created_at'])
+        if 'updated_at' in profile:
+            profile['updated_at'] = self._dt_to_str(profile['updated_at'])
         
         return profile
 
     async def _format_segment_tags(self, new_tags: list, existing_tags: list) -> list:
         """
-          Updating profile segment tags
+        Updating profile segment tags
         """
         formatted = existing_tags.copy()
         for tag in new_tags:
             found = next((t for t in formatted if t.get('segment_id') == tag.get('segment_id')), None)
             if found:
                 found.update(tag)
-                found['updated_at'] = dt.now(tz.utc)  # FIX: was tz.now (does not exist), corrected to tz.utc
+                found['updated_at'] = dt.now(tz.utc)
             else:
-                tag['created_at'] = dt.now(tz.utc)  # FIX: was tz.now (does not exist), corrected to tz.utc
+                tag['created_at'] = dt.now(tz.utc)
                 formatted.append(tag)
         return formatted
 
