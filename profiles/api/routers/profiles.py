@@ -111,7 +111,8 @@ async def get_customer_profiles(request: Request,
             raise OctyException(400,'Invalid Parameters', [{'error_message' : f'A maximum number of {Config["MAX_GET_PROFILES"]} identifiers can be provided with the "?ids=" query param per request', 
                 'extended_help': Config['PROFILES_EXTENDED_HELP']}])
     
-    profiles, total = ProfilesService(current_account).get_profiles(segments=segments,
+    # FIX: added await (get_profiles is now async)
+    profiles, total = await ProfilesService(current_account).get_profiles(segments=segments,
                                                             rfm_values=rfm_vals, 
                                                             churn_prob=churn_prob,
                                                             identifiers=identifiers,
@@ -201,8 +202,8 @@ async def get_profiles_meta(request: Request, ids : str,
         raise OctyException(400,'Invalid Parameters', [{'error_message' : f'A minimum number of {1} identifier must be provided with each request', 
             'extended_help': Config['PROFILES_EXTENDED_HELP']}])
 
-    
-    profiles_meta = ProfilesService(current_account).get_profiles_meta(identifiers)
+    # FIX: added await (get_profiles_meta is now async)
+    profiles_meta = await ProfilesService(current_account).get_profiles_meta(identifiers)
     return GetProfilesMetaDTO(profiles_meta).dto() 
     
 
@@ -239,8 +240,8 @@ async def get_profiles_internal(request: Request,  profiles : GetProfilesInterna
             raise OctyException(400,'Exceeded resource request limit', [{'error_message' : 'can only get 2000 profiles per request', 
                 'extended_help': ''}])
 
-
-    profiles, not_found , total = ProfilesService(None, profiles.account_id).get_profiles_internal(profiles=profiles,status = status,  cursor=cursor, ids=bool(ids))
+    # FIX: added await (get_profiles_internal is now async)
+    profiles, not_found , total = await ProfilesService(None, profiles.account_id).get_profiles_internal(profiles=profiles, status=status, cursor=cursor, ids=bool(ids))
     return GetProfilesInternalDTO(profiles, not_found , total, cursor).dto()
 
 ######################################
