@@ -122,10 +122,9 @@ class ProfilesService():
                 internal=True)
 
         def _val_or_none(obj, key):
-            try:
-                return obj[key]
-            except TypeError:
+            if obj is None:
                 return None
+            return obj.get(key)
 
         identifiers_meta = list()
         for i in identifiers: 
