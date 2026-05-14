@@ -36,6 +36,17 @@ class _ProfilesRepository(ProfilesInterface):
         self._profiles_collection = lambda: ctx.contextManager.db["tbl_profiles"]
         self._merged_profiles_collection = lambda: ctx.contextManager.db["tbl_merged_profiles"]
 
+    # FIX: added property accessors — __init__ defines _profiles_collection as a lambda
+    # but all methods accessed self.profiles_collection (no underscore, not called),
+    # which would AttributeError on every method call.
+    @property
+    def profiles_collection(self):
+        return self._profiles_collection()
+
+    @property
+    def merged_profiles_collection(self):
+        return self._merged_profiles_collection()
+
     async def get_profile_count(self, account_id: str) -> int:
         """
         A method used to return the count of all exisitng profiles associated with specififed account.
@@ -233,22 +244,26 @@ class _ProfilesRepository(ProfilesInterface):
         ----------
         merged_profiles : list
         """
-        pipeline = []
-        for idx, identifier in enumerate(identifiers):
-            pipeline.append({
+        # FIX: replaced per-identifier pipeline loop with a single $match using $in across
+        # all identifiers. The old loop stacked $match/$sort/$limit stages sequentially,
+        # meaning each iteration would filter the already-limited result of the previous one,
+        # returning at most 1 document total and missing all but the last matched identifier.
+        pipeline = [
+            {
                 '$match': {
                     '$and': [
-                        {"account_id": account_id},
+                        {'account_id': account_id},
                         {'$or': [
-                            {"merged_profiles.profile_id": identifier},
-                            {"merged_profiles.customer_id": identifier},
-                            {"parent_profile_id": identifier},
-                            {"parent_customer_id": identifier}
+                            {'merged_profiles.profile_id': {'$in': identifiers}},
+                            {'merged_profiles.customer_id': {'$in': identifiers}},
+                            {'parent_profile_id': {'$in': identifiers}},
+                            {'parent_customer_id': {'$in': identifiers}}
                         ]}
                     ]
                 }
-            })
-            pipeline.extend([{'$sort': {'created_at': -1}}, {'$limit': 1}])
+            },
+            {'$sort': {'created_at': -1}}
+        ]
         
         results = await self.merged_profiles_collection.aggregate(pipeline).to_list(None)
         merged_profiles = []
@@ -557,7 +572,7 @@ class _ProfilesRepository(ProfilesInterface):
                                 "segment_id": seg['segment_id'],
                                 "segment_tag": seg['segment_tag'],
                                 "status": seg['status'],
-                                "created_at": dt.now(tz.now)
+                                "created_at": dt.now(tz.utc)  # FIX: was tz.now (does not exist), corrected to tz.utc
                             }
                         }
                     }
@@ -693,13 +708,11 @@ class _ProfilesRepository(ProfilesInterface):
             found = next((t for t in formatted if t.get('segment_id') == tag.get('segment_id')), None)
             if found:
                 found.update(tag)
-                found['updated_at'] = dt.now(tz.now)
+                found['updated_at'] = dt.now(tz.utc)  # FIX: was tz.now (does not exist), corrected to tz.utc
             else:
-                tag['created_at'] = dt.now(tz.now)
+                tag['created_at'] = dt.now(tz.utc)  # FIX: was tz.now (does not exist), corrected to tz.utc
                 formatted.append(tag)
         return formatted
-
-
 
 
 profilesRepository = _ProfilesRepository()
