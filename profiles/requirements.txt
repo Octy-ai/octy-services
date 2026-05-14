@@ -35,3 +35,4 @@ yarl
 python-dotenv
 motor
 requests
+mongoengine
