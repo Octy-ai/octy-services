@@ -40,8 +40,12 @@ def decode_account_jwt(request : Request):
         print(e)
         raise Exception(500, 'Authentication failed becuase of a server error. Invalid JWT token provided!')
 
+    account_id = decoded_token['b']['a_id']
+    if isinstance(account_id, dict) and '$oid' in account_id:
+        account_id = account_id['$oid']
+        
     return Account(
-        account_id = decoded_token['b']['a_id'],
+        account_id = account_id,
         account_name = decoded_token['b']['a_n'],
         bucket = decoded_token['b']['b'],
         permissions = decoded_token['b']['pe'],
